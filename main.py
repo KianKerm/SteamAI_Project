@@ -28,7 +28,17 @@ if profile_name:
 
         if st.button('Yes!'):
             owned_games_response = steam_api_object.get_owned_games(user_steam_id)['response']
-            st.write(owned_games_response)
+            # if I wanted the avatar you can go thru dict like so ['response']['players'][0]['avatar']
+            # probably cleaner way to parse these later on
+            ps_r = steam_api_object.get_player_summary(user_steam_id)['response']['players'][0]['avatar']
+            st.write('Test psr:', ps_r)
+            st.image(ps_r)
+            # for games
+            # use this url to display image
+            # img_icon_url, img_logo_url - these are the filenames of various images for the game.
+            # To construct the URL to the image,
+            # use this format: https://media.steampowered.com/steamcommunity/public/images/apps/{appid}/{hash}.jpg
+            st.write('test owned games',owned_games_response)
     else:
         st.error('Failed to find your Steam profile!')
 
