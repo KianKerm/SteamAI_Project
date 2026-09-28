@@ -22,7 +22,7 @@ class SteamAPI:
         return response.json()
 
 
-    def get_owned_games(self, steamid, include_appinfo = True, include_played_free_games = True) -> dict:
+    def get_owned_games(self, steamid, include_appinfo = True, include_played_free_games = 1) -> dict:
         '''
         kwargs: steamid The SteamID of the account.
             include_appinfo Include game name and logo information in the output. The default is to return appids only.
@@ -38,7 +38,7 @@ class SteamAPI:
                            f"&steamid={steamid}"
                            f"&format=json"
                            f"&include_appinfo={include_appinfo}"
-                           f"&include_played_free_games={include_played_free_games} ")
+                           f"&include_played_free_games={include_played_free_games}")
         response = requests.get(owned_games_url)
         return response.json()
 
