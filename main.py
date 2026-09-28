@@ -6,7 +6,6 @@ from steam_api import *
 st.title('Steam App')
 
 # init steamAPI handler and pass auth token
-
 steam_api_key = st.secrets['steam_api_key']
 steam_api_object = SteamAPI(steam_api_key)
 
