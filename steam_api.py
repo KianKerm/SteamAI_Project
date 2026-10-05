@@ -9,15 +9,20 @@ class SteamAPI:
         self.base_url = 'https://api.steampowered.com/'
         self.auth_token = auth_token
 
-    # for resolving the vanity url or profile name passed by the user
+    # =============== STEAM API INTERACTIONS ===============
 
-    def resolve_vanity_url(self, userVanityUrl):
-        api_url = f"{self.base_url}ISteamUser/ResolveVanityURL/v1/?key={self.auth_token}&vanityurl={userVanityUrl}"
+    def resolve_vanity_url(self, steam_profile_name: str) -> dict:
+        '''
+        Resolve the vanity url given the profile name to get the user's steamid.
+        :param steam_profile_name: like "User01", "xGamerx"
+        :return: json containing the steamid of the user
+        '''
+        api_url = f"{self.base_url}ISteamUser/ResolveVanityURL/v1/?key={self.auth_token}&vanityurl={steam_profile_name}"
         response = requests.get(api_url)
         return response.json()
 
 
-    def get_owned_games(self, steamid, include_appinfo = True, include_played_free_games = True):
+    def get_owned_games(self, steamid, include_appinfo = True, include_played_free_games = 1) -> dict:
         '''
         kwargs: steamid The SteamID of the account.
             include_appinfo Include game name and logo information in the output. The default is to return appids only.
@@ -33,7 +38,7 @@ class SteamAPI:
                            f"&steamid={steamid}"
                            f"&format=json"
                            f"&include_appinfo={include_appinfo}"
-                           f"&include_played_free_games={include_played_free_games} ")
+                           f"&include_played_free_games={include_played_free_games}")
         response = requests.get(owned_games_url)
         return response.json()
 
