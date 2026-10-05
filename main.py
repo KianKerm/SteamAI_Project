@@ -59,7 +59,7 @@ if st.session_state.owned_games is not None:
                  ,horizontal = True ,sort = False ,color = 'name')
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Fetching data from Steam API...")
 def foo(appid):
     app_info = steam_api_object.get_app_info(appid)
     return app_info
@@ -70,10 +70,8 @@ if st.button('Test'):
 
 if st.button('Test2'):
 
-    steam_app_info = foo(appid=20)
-    st.write(steam_app_info)
+    steam_app_info = foo(appid='3513350')
+    st.write(steam_app_info['3513350']['data'])
 
-if st.button('Test3'):
-    st.write(steam_app_info['data'])
 
 
