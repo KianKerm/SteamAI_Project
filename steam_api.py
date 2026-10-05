@@ -43,10 +43,27 @@ class SteamAPI:
         return response.json()
 
     def get_player_summary(self, steamid):
-        '''Supports multiple profiles at same time if pass as comma delimited list'''
+        '''Supports multiple profiles at same time if passed as a list'''
         player_summary_url = (f"{self.base_url}ISteamUser/GetPlayerSummaries/v0002/?key={self.auth_token}"
                               f"&steamids={steamid}"
                               f"&format=json")
         response = requests.get(player_summary_url)
         return response.json()
 
+
+    def get_app_list(self,last_appid = '', max_results = 10000) -> dict:
+        '''
+        last_appid is by default empty string
+        :return: all apps available in Steam store.
+        '''
+        app_list_url = (f"{self.base_url}"
+                        f"IStoreService/GetAppList/v1/?key={self.auth_token}"
+                        f"&last_appid={last_appid}"
+                        f"&max_results={max_results}")
+        response = requests.get(app_list_url)
+        return response.json()
+
+    def get_app_info(self, appid) -> dict:
+        app_info_url = (f"https://store.steampowered.com/api/appdetails?appids={appid}")
+        response = requests.get(app_info_url)
+        return response.json()

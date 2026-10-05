@@ -57,3 +57,23 @@ if st.session_state.owned_games is not None:
     st.bar_chart(data = top10_games, x = 'name' ,y =  'playtime_forever'
                  ,x_label = 'Hours played' ,y_label = 'Game titles'
                  ,horizontal = True ,sort = False ,color = 'name')
+
+
+@st.cache_data
+def foo(appid):
+    app_info = steam_api_object.get_app_info(appid)
+    return app_info
+
+if st.button('Test'):
+    steam_app_list = steam_api_object.get_app_list()['response']
+    st.write(steam_app_list)
+
+if st.button('Test2'):
+
+    steam_app_info = foo(appid=20)
+    st.write(steam_app_info)
+
+if st.button('Test3'):
+    st.write(steam_app_info['data'])
+
+
