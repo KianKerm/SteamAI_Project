@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 # import numpy as np
 from steam_api import *
+from data_loader import *
 
 st.title('Steam App')
 
@@ -69,9 +70,21 @@ if st.button('Test'):
     st.write(steam_app_list)
 
 if st.button('Test2'):
+    steam_df = SteamDataLoader()
 
     steam_app_info = foo(appid='3513350')
     st.write(steam_app_info['3513350']['data'])
+    steam_df.extract_fields_to_pandas(steam_app_info['3513350']['data'])
+    st.dataframe(steam_df.df)
+
+    steam_app_info = foo(appid='24720')
+    steam_df.extract_fields_to_pandas(steam_app_info['24720']['data'])
+    st.dataframe(steam_df.df)
+    for lst in [730, 570, 440, 620, 550, 105600, 413150, 1245620, 1086940, 1091500]:
+        steam_app_info = foo(appid=lst)
+        steam_df.extract_fields_to_pandas(steam_app_info[str(lst)]['data'])
+        st.dataframe(steam_df.df)
+
 
 
 

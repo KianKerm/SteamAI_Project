@@ -7,13 +7,26 @@ class SteamDataLoader:
         self.df = None
 
 
-    def extract_fields_to_pandas(self, data: dict, appid) -> pd.DataFrame:
-        x = None
+    def extract_fields_to_pandas(self, data_dict: dict):
         # detailed_description (req regex)
-        # short_description
         # genres (exclude free to play) [genres].keys()
         # dataframe should look like
         # Name | short_description | genre 1 | 2
+        # dict is from here steam_app_info['3513350']['data']
+
+        allowed_fields = {'name':data_dict.get('name'),
+                          'detailed_description':data_dict.get('detailed_description'),
+                          'genres':', '.join([data_dict.get('genres')[idx]['description'] for idx in range(len(data_dict.get('genres')))]),
+                          'release_date':data_dict.get('release_date')['date'],
+                          'steam_appid':data_dict.get('steam_appid'),
+                          'developers':data_dict.get('developers')[0],
+                          'publishers':data_dict.get('publishers')[0]
+                          }
+        if self.df is None:
+            self.df = pd.DataFrame(allowed_fields, index=[0])
+        else:
+            self.df = pd.concat([self.df ,pd.DataFrame(allowed_fields, index=[self.df.index[-1] + 1]) ] )
+        return None
 
 
 
