@@ -83,9 +83,20 @@ def fetch_app_info(app_ids: list, _steam_data):
     :return: streamlit dataframe containing all requested app data
     '''
 
+    skipped_app_ids = []
     for app_id in app_ids:
         app_info = steam_api_object.get_app_info(app_id)
-        _steam_data.extract_fields_to_pandas(app_info[str(app_id)]['data'])
+        result = (app_info or {}).get(str(app_id)) or {}
+        if not result.get('success') or not isinstance(result.get('data'), dict):
+            skipped_app_ids.append(app_id)
+            continue
+        _steam_data.extract_fields_to_pandas(result['data'])
+
+    if skipped_app_ids:
+        st.warning(f'Steam returned no store data for {len(skipped_app_ids)} apps; these were skipped.')
+
+    if _steam_data.df is None:
+        return pd.DataFrame(columns=['name', 'short_description'])
 
     # clean text and pass to variable
     # note: some games have less info in detailed_description vs short_description
@@ -95,14 +106,10 @@ def fetch_app_info(app_ids: list, _steam_data):
 
     return streamlit_df
 
-# test: lst = [730, 570, 440, 620, 550, 105600, 413150, 1245620, 1086940, 1091500]
-if st.button('Test'):
-    steam_app_list = steam_api_object.get_app_list()['response']
-    st.write(steam_app_list)
 
-
-if st.button('TryDF'):
-    lst = [730, 570, 440, 620, 550, 105600, 413150, 1245620, 1086940, 1091500]
+owned_games = (st.session_state.owned_games or {}).get('games', [])
+if st.button('TryDF', disabled=not owned_games):
+    lst = [game['appid'] for game in owned_games]
     steam_data = SteamDataLoader()
     # start = time.time()
     # print(start)

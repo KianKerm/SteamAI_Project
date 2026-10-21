@@ -35,11 +35,11 @@ class SteamDataLoader:
         allowed_fields = {'name':data_dict.get('name'),
                           'detailed_description':data_dict.get('detailed_description'),
                           'short_description':data_dict.get('short_description'),
-                          'genres':', '.join([data_dict.get('genres')[idx]['description'] for idx in range(len(data_dict.get('genres')))]),
-                          'release_date':data_dict.get('release_date')['date'],
+                          'genres':', '.join(genre['description'] for genre in (data_dict.get('genres') or []) if genre.get('description')),
+                          'release_date':(data_dict.get('release_date') or {}).get('date'),
                           'steam_appid':data_dict.get('steam_appid'),
-                          'developers':data_dict.get('developers')[0],
-                          'publishers':data_dict.get('publishers')[0]
+                          'developers':next(iter(data_dict.get('developers') or []), None),
+                          'publishers':next(iter(data_dict.get('publishers') or []), None)
                           }
         if self.df is None:
             self.df = pd.DataFrame(allowed_fields, index=[0])
