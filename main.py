@@ -4,6 +4,7 @@ import time
 # import numpy as np
 from steam_api import *
 from data_loader import *
+from model import *
 
 st.title('Steam App')
 
@@ -14,7 +15,16 @@ steam_api_object = SteamAPI(steam_api_key)
 # input for steamID
 # need to validate text
 profile_name = st.text_input(label = 'Enter Steam Name' )
-st.session_state.owned_games = None
+if 'owned_games' not in st.session_state:
+    st.session_state.owned_games = None
+
+# chatbot init
+if 'AI_helper' not in st.session_state:
+    st.session_state.AI_helper = None
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+if 'steam_df' not in st.session_state:
+    st.session_state.steam_df = None
 
 # check for valid string
 # nested control flow
@@ -77,7 +87,12 @@ def fetch_app_info(app_ids: list, _steam_data):
         app_info = steam_api_object.get_app_info(app_id)
         _steam_data.extract_fields_to_pandas(app_info[str(app_id)]['data'])
 
+    # clean text and pass to variable
+    # note: some games have less info in detailed_description vs short_description
+    # cyberpunk2077 for example has more info stored in images on the steam page
+    _steam_data.clean_text()
     streamlit_df = _steam_data.df
+
     return streamlit_df
 
 # test: lst = [730, 570, 440, 620, 550, 105600, 413150, 1245620, 1086940, 1091500]
@@ -91,9 +106,58 @@ if st.button('TryDF'):
     steam_data = SteamDataLoader()
     # start = time.time()
     # print(start)
-    steam_df = fetch_app_info(lst, steam_data)
+    st.session_state.steam_df = fetch_app_info(lst, steam_data)
+    st.session_state.AI_helper = None
+    st.session_state.messages = []
     # print(time.time() - start)
+
+if st.session_state.steam_df is not None:
+    steam_df = st.session_state.steam_df
     st.dataframe(steam_df)
+    if st.session_state.AI_helper is None:
+        descriptions = steam_df['short_description']
+        valid = descriptions.map(lambda value: isinstance(value, str) and bool(value.strip()))
+        if valid.any():
+            try:
+                with st.spinner('Preparing game descriptions for the chatbot...'):
+                    AI_helper = LangModel(
+                        dataset=descriptions.loc[valid].tolist(),
+                        game_names=steam_df.loc[valid, 'name'].tolist(),
+                    )
+                    AI_helper.add_chunk_to_database()
+                    st.session_state.AI_helper = AI_helper
+            except Exception as error:
+                st.error(f'Could not prepare the chatbot: {error}')
+        else:
+            st.warning('No game descriptions are available to search.')
+
+st.subheader('Game chat')
+if st.session_state.AI_helper is None:
+    st.info('Click TryDF to load game descriptions before chatting.')
+
+for message in st.session_state.messages:
+    with st.chat_message(message['role']):
+        st.markdown(message['content'])
+
+input_query = st.chat_input(
+    'Ask me about similar games:',
+    disabled=st.session_state.AI_helper is None,
+)
+if input_query:
+    history = list(st.session_state.messages)
+    st.session_state.messages.append({'role': 'user', 'content': input_query})
+    with st.chat_message('user'):
+        st.markdown(input_query)
+    with st.chat_message('assistant'):
+        try:
+            with st.spinner('Chatbot is thinking...'):
+                stream = st.session_state.AI_helper.stream_chat(input_query, history=history)
+                response = st.write_stream(
+                    chunk['message']['content'] for chunk in stream
+                )
+            st.session_state.messages.append({'role': 'assistant', 'content': response})
+        except Exception as error:
+            st.error(f'Could not generate a response: {error}')
 
 
 

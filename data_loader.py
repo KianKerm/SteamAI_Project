@@ -1,5 +1,23 @@
 # Load and handle formating for the data pulled in from SteamAPI
 import pandas as pd
+from html.parser import HTMLParser
+
+# object to clean the html and keep only the text
+class _HTMLTextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {'br', 'p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}:
+            self.parts.append('\n')
+
+    def handle_endtag(self, tag):
+        if tag in {'p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}:
+            self.parts.append('\n')
 
 class SteamDataLoader:
 
@@ -16,6 +34,7 @@ class SteamDataLoader:
 
         allowed_fields = {'name':data_dict.get('name'),
                           'detailed_description':data_dict.get('detailed_description'),
+                          'short_description':data_dict.get('short_description'),
                           'genres':', '.join([data_dict.get('genres')[idx]['description'] for idx in range(len(data_dict.get('genres')))]),
                           'release_date':data_dict.get('release_date')['date'],
                           'steam_appid':data_dict.get('steam_appid'),
@@ -26,6 +45,22 @@ class SteamDataLoader:
             self.df = pd.DataFrame(allowed_fields, index=[0])
         else:
             self.df = pd.concat([self.df ,pd.DataFrame(allowed_fields, index=[self.df.index[-1] + 1]) ] )
+        return None
+
+    def clean_text(self):
+        """Remove HTML from descriptions in place, preserving missing values."""
+        if self.df is None:
+            return None
+
+        def remove_html(value):
+            if not isinstance(value, str):
+                return value
+            parser = _HTMLTextExtractor()
+            parser.feed(value)
+            parser.close()
+            return ''.join(parser.parts).strip()
+
+        self.df['detailed_description'] = self.df['detailed_description'].map(remove_html)
         return None
 
 
