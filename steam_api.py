@@ -14,9 +14,11 @@ class SteamAPI:
     def resolve_vanity_url(self, steam_profile_name: str) -> dict:
         '''
         Resolve the vanity url given the profile name to get the user's steamid.
-        :param steam_profile_name: like "User01", "xGamerx"
+        :param steam_profile_name: a vanity name or https://steamcommunity.com/id/name/ URL
         :return: json containing the steamid of the user
         '''
+        profile_prefix = 'https://steamcommunity.com/id/'
+        steam_profile_name = steam_profile_name.strip().removeprefix(profile_prefix).rstrip('/')
         api_url = f"{self.base_url}ISteamUser/ResolveVanityURL/v1/?key={self.auth_token}&vanityurl={steam_profile_name}"
         response = requests.get(api_url)
         return response.json()

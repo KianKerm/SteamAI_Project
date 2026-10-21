@@ -1,83 +1,45 @@
 import streamlit as st
 import pandas as pd
-import time
-# import numpy as np
-from steam_api import *
-from data_loader import *
-from model import *
+from steam_api import SteamAPI
+from data_loader import SteamDataLoader
+from model import LangModel
 
 st.title('Steam App')
 
-# init steamAPI handler and pass auth token
-steam_api_key = st.secrets['steam_api_key']
-steam_api_object = SteamAPI(steam_api_key)
+steam_api_object = SteamAPI(st.secrets['steam_api_key'])
 
-# input for steamID
-# need to validate text
-profile_name = st.text_input(label = 'Enter Steam Name' )
-if 'owned_games' not in st.session_state:
-    st.session_state.owned_games = None
+for key, default in {
+    'owned_games': None,
+    'user_steam_id': None,
+    'AI_helper': None,
+    'messages': [],
+    'steam_df': None,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# chatbot init
-if 'AI_helper' not in st.session_state:
-    st.session_state.AI_helper = None
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-if 'steam_df' not in st.session_state:
-    st.session_state.steam_df = None
+with st.form('steam_profile'):
+    profile_name = st.text_input('Enter Steam profile name')
+    load_profile = st.form_submit_button('Load profile')
 
-# check for valid string
-# nested control flow
-if profile_name:
-
-    vanity_response = steam_api_object.resolve_vanity_url(profile_name)['response']
-    vanity_success = vanity_response['success']
-
-    if vanity_success == 1:
-        st.success('Successfully found your Steam profile!')
-        user_steam_id = vanity_response['steamid']
-        # set session state so we don't have to get userid each time
-        st.session_state.user_steam_id = user_steam_id
-        st.write('Get owned games?')
-
-        if st.button('Yes!'):
-            owned_games_response = steam_api_object.get_owned_games(user_steam_id)['response']
-            # session state for their games owned
-            st.session_state.owned_games = owned_games_response
-            st.session_state.steam_df = None
-            st.session_state.AI_helper = None
-            st.session_state.messages = []
-            # if I wanted the avatar you can go thru dict like so ['response']['players'][0]['avatar']
-            # probably cleaner way to parse these later on
-            ps_r = steam_api_object.get_player_summary(user_steam_id)['response']['players'][0]['avatar']
-            st.write('Test psr:', ps_r)
-            st.image(ps_r)
-            # for games
-            # use this url to display image
-            # img_icon_url, img_logo_url - these are the filenames of various images for the game.
-            # To construct the URL to the image,
-            # use this format: https://media.steampowered.com/steamcommunity/public/images/apps/{appid}/{hash}.jpg
-            st.write('test owned games',st.session_state.owned_games)
+if load_profile:
+    if not profile_name.strip():
+        st.warning('Enter a Steam profile name.')
     else:
-        st.error('Failed to find your Steam profile!')
+        with st.spinner('Loading Steam profile...'):
+            vanity_response = steam_api_object.resolve_vanity_url(profile_name.strip())['response']
+            if vanity_response['success'] == 1:
+                user_steam_id = vanity_response['steamid']
+                owned_games = steam_api_object.get_owned_games(user_steam_id)['response']
+                st.session_state.user_steam_id = user_steam_id
+                st.session_state.owned_games = owned_games
+                st.session_state.steam_df = None
+                st.session_state.AI_helper = None
+                st.session_state.messages = []
+                st.success('Steam profile loaded.')
+            else:
+                st.error('Failed to find your Steam profile!')
 
-
-if st.session_state.owned_games is not None:
-    st.write('Here are your top 10 games by hours played')
-    game_df = pd.DataFrame(st.session_state.owned_games['games'])
-    # integer div hours
-    game_df['playtime_forever'] = game_df['playtime_forever'] // 60
-    top10_games = game_df.sort_values('playtime_forever', ascending=False).head(10)
-    st.dataframe(top10_games)
-    st.bar_chart(data = top10_games, x = 'name' ,y =  'playtime_forever'
-                 ,x_label = 'Hours played' ,y_label = 'Game titles'
-                 ,horizontal = True ,sort = False ,color = 'name')
-
-
-# app_id should be a list of app ids
-# !!! needs to be rate limited, hard cap of 100k api calls per day,
-# therefore it is important that the result is cached properly
-# tested caching, 2 seconds to request info for 10 apps down to 0.0009 seconds
 @st.cache_data(show_spinner="Fetching data from Steam API...")
 def fetch_app_info(app_ids: list, _steam_data):
     '''
@@ -101,22 +63,19 @@ def fetch_app_info(app_ids: list, _steam_data):
     if _steam_data.df is None:
         return pd.DataFrame(columns=['steam_appid', 'name', 'short_description'])
 
-    # clean text and pass to variable
-    # note: some games have less info in detailed_description vs short_description
-    # cyberpunk2077 for example has more info stored in images on the steam page
     _steam_data.clean_text()
-    streamlit_df = _steam_data.df
 
-    return streamlit_df
+    return _steam_data.df
 
-
+# owned games
 owned_games = (st.session_state.owned_games or {}).get('games', [])
-if st.button('TryDF', disabled=not owned_games):
-    lst = [game['appid'] for game in owned_games]
+
+if st.session_state.owned_games is not None:
+    st.caption(f'{len(owned_games)} owned games available.')
+if st.button('Prepare library', disabled=not owned_games):
+    app_ids = [game['appid'] for game in owned_games]
     steam_data = SteamDataLoader()
-    # start = time.time()
-    # print(start)
-    store_df = fetch_app_info(lst, steam_data).copy()
+    store_df = fetch_app_info(app_ids, steam_data).copy()
     # Keep user-specific playtime outside the cached store-data request.
     playtime_df = pd.DataFrame(owned_games).reindex(columns=['appid', 'playtime_forever'])
     playtime_df = playtime_df.rename(columns={'appid': 'steam_appid'})
@@ -134,11 +93,11 @@ if st.button('TryDF', disabled=not owned_games):
     st.session_state.steam_df = steam_data.df
     st.session_state.AI_helper = None
     st.session_state.messages = []
-    # print(time.time() - start)
 
 if st.session_state.steam_df is not None:
     steam_df = st.session_state.steam_df
-    st.dataframe(steam_df)
+    with st.expander('Library DataFrame (debugging)', expanded=True):
+        st.dataframe(steam_df)
     if st.session_state.AI_helper is None:
         descriptions = steam_df['FullContext']
         valid = descriptions.map(lambda value: isinstance(value, str) and bool(value.strip()))
@@ -157,7 +116,7 @@ if st.session_state.steam_df is not None:
 
 st.subheader('Game chat')
 if st.session_state.AI_helper is None:
-    st.info('Click TryDF to load game descriptions before chatting.')
+    st.info('Load your profile, then click Prepare library before chatting.')
 
 for message in st.session_state.messages:
     with st.chat_message(message['role']):
@@ -182,9 +141,4 @@ if input_query:
             st.session_state.messages.append({'role': 'assistant', 'content': response})
         except Exception as error:
             st.error(f'Could not generate a response: {error}')
-
-
-
-
-
 
