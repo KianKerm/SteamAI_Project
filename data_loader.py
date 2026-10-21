@@ -63,7 +63,41 @@ class SteamDataLoader:
         self.df['detailed_description'] = self.df['detailed_description'].map(remove_html)
         return None
 
+    def add_context(self):
+        """Create a labeled FullContext string for each game in place."""
+        if self.df is None:
+            return None
 
+        columns = ['name', 'detailed_description', 'short_description', 'genres',
+                   'release_date', 'developers', 'publishers']
+        fields = self.df.reindex(columns=columns).fillna('').astype(str)
+
+        description = (
+            fields['detailed_description'].str.strip() + ' ' +
+            fields['short_description'].str.strip()
+        ).str.strip()
+        developer_publisher = (
+            fields['developers'].str.strip() + ' / ' + fields['publishers'].str.strip()
+        ).str.strip(' /')
+
+        self.df['FullContext'] = (
+            'Name: ' + fields['name'] +
+            ', Description: ' + description +
+            ', Genres: ' + fields['genres'] +
+            ', Release date: ' + fields['release_date'] +
+            ', Developer and Publisher: ' + developer_publisher + '.'
+        )
+        if 'playtime_hours' in self.df.columns:
+            def format_playtime(hours):
+                if pd.isna(hours):
+                    return ''
+                return f', Playtime hours: {hours:g}'
+
+            self.df['FullContext'] = (
+                self.df['FullContext'].str.removesuffix('.') +
+                self.df['playtime_hours'].map(format_playtime).astype(str) + '.'
+            )
+        return None
 
 
 # step 1: iterate through all owned games ad get appid, playtime forever in hours

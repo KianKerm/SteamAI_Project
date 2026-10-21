@@ -44,6 +44,9 @@ if profile_name:
             owned_games_response = steam_api_object.get_owned_games(user_steam_id)['response']
             # session state for their games owned
             st.session_state.owned_games = owned_games_response
+            st.session_state.steam_df = None
+            st.session_state.AI_helper = None
+            st.session_state.messages = []
             # if I wanted the avatar you can go thru dict like so ['response']['players'][0]['avatar']
             # probably cleaner way to parse these later on
             ps_r = steam_api_object.get_player_summary(user_steam_id)['response']['players'][0]['avatar']
@@ -96,7 +99,7 @@ def fetch_app_info(app_ids: list, _steam_data):
         st.warning(f'Steam returned no store data for {len(skipped_app_ids)} apps; these were skipped.')
 
     if _steam_data.df is None:
-        return pd.DataFrame(columns=['name', 'short_description'])
+        return pd.DataFrame(columns=['steam_appid', 'name', 'short_description'])
 
     # clean text and pass to variable
     # note: some games have less info in detailed_description vs short_description
@@ -113,7 +116,22 @@ if st.button('TryDF', disabled=not owned_games):
     steam_data = SteamDataLoader()
     # start = time.time()
     # print(start)
-    st.session_state.steam_df = fetch_app_info(lst, steam_data)
+    store_df = fetch_app_info(lst, steam_data).copy()
+    # Keep user-specific playtime outside the cached store-data request.
+    playtime_df = pd.DataFrame(owned_games).reindex(columns=['appid', 'playtime_forever'])
+    playtime_df = playtime_df.rename(columns={'appid': 'steam_appid'})
+    store_df['steam_appid'] = pd.to_numeric(store_df['steam_appid'], errors='raise').astype('Int64')
+    playtime_df['steam_appid'] = pd.to_numeric(playtime_df['steam_appid'], errors='raise').astype('Int64')
+    # Steam reports minutes. Retain fractional hours and distinguish missing from zero.
+    playtime_df['playtime_hours'] = pd.to_numeric(
+        playtime_df['playtime_forever'], errors='coerce'
+    ) / 60
+    steam_data.df = store_df.merge(
+        playtime_df[['steam_appid', 'playtime_hours']],
+        on='steam_appid', how='left', validate='one_to_one',
+    )
+    steam_data.add_context()
+    st.session_state.steam_df = steam_data.df
     st.session_state.AI_helper = None
     st.session_state.messages = []
     # print(time.time() - start)
@@ -122,14 +140,13 @@ if st.session_state.steam_df is not None:
     steam_df = st.session_state.steam_df
     st.dataframe(steam_df)
     if st.session_state.AI_helper is None:
-        descriptions = steam_df['short_description']
+        descriptions = steam_df['FullContext']
         valid = descriptions.map(lambda value: isinstance(value, str) and bool(value.strip()))
         if valid.any():
             try:
                 with st.spinner('Preparing game descriptions for the chatbot...'):
                     AI_helper = LangModel(
                         dataset=descriptions.loc[valid].tolist(),
-                        game_names=steam_df.loc[valid, 'name'].tolist(),
                     )
                     AI_helper.add_chunk_to_database()
                     st.session_state.AI_helper = AI_helper
