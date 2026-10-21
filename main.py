@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import time
 # import numpy as np
 from steam_api import *
 from data_loader import *
@@ -60,30 +61,41 @@ if st.session_state.owned_games is not None:
                  ,horizontal = True ,sort = False ,color = 'name')
 
 
+# app_id should be a list of app ids
+# !!! needs to be rate limited, hard cap of 100k api calls per day,
+# therefore it is important that the result is cached properly
+# tested caching, 2 seconds to request info for 10 apps down to 0.0009 seconds
 @st.cache_data(show_spinner="Fetching data from Steam API...")
-def foo(appid):
-    app_info = steam_api_object.get_app_info(appid)
-    return app_info
+def fetch_app_info(app_ids: list, _steam_data):
+    '''
+    :param app_ids: list of app ids to request from steam API
+    :param _steam_data: DataLoader object that will contain data from Steam API
+    :return: streamlit dataframe containing all requested app data
+    '''
 
+    for app_id in app_ids:
+        app_info = steam_api_object.get_app_info(app_id)
+        _steam_data.extract_fields_to_pandas(app_info[str(app_id)]['data'])
+
+    streamlit_df = _steam_data.df
+    return streamlit_df
+
+# test: lst = [730, 570, 440, 620, 550, 105600, 413150, 1245620, 1086940, 1091500]
 if st.button('Test'):
     steam_app_list = steam_api_object.get_app_list()['response']
     st.write(steam_app_list)
 
-if st.button('Test2'):
-    steam_df = SteamDataLoader()
 
-    steam_app_info = foo(appid='3513350')
-    st.write(steam_app_info['3513350']['data'])
-    steam_df.extract_fields_to_pandas(steam_app_info['3513350']['data'])
-    st.dataframe(steam_df.df)
+if st.button('TryDF'):
+    lst = [730, 570, 440, 620, 550, 105600, 413150, 1245620, 1086940, 1091500]
+    steam_data = SteamDataLoader()
+    # start = time.time()
+    # print(start)
+    steam_df = fetch_app_info(lst, steam_data)
+    # print(time.time() - start)
+    st.dataframe(steam_df)
 
-    steam_app_info = foo(appid='24720')
-    steam_df.extract_fields_to_pandas(steam_app_info['24720']['data'])
-    st.dataframe(steam_df.df)
-    for lst in [730, 570, 440, 620, 550, 105600, 413150, 1245620, 1086940, 1091500]:
-        steam_app_info = foo(appid=lst)
-        steam_df.extract_fields_to_pandas(steam_app_info[str(lst)]['data'])
-        st.dataframe(steam_df.df)
+
 
 
 
