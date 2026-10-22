@@ -125,6 +125,50 @@ class OpenAIModelTests(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertEqual(app.session_state['messages'], [])
 
+    def test_session_question_limit_survives_clear_and_library_reload(self):
+        import streamlit as st
+        from streamlit.testing.v1 import AppTest
+        from steam_api import SteamAPI
+        with patch.object(st, 'secrets', {'steam_api_key': 'fake-steam', 'OPENAI_API_KEY': 'fake-test-key'}), \
+             patch.object(SteamAPI, 'get_app_info', return_value={'1': {'success': False}}):
+            self.client.responses.stream.side_effect = lambda **kwargs: fake_stream()
+            app = AppTest.from_file('main.py')
+            app.session_state['steam_df'] = sample_library()
+            app.session_state['owned_games'] = {'games': [{'appid': 1, 'name': 'Example', 'playtime_forever': 90}]}
+            app.run()
+            for number in range(10):
+                self.assertFalse(app.chat_input[0].disabled)
+                app.chat_input[0].set_value(f'Question {number + 1}').run()
+                self.assertFalse(app.exception)
+            self.assertEqual(app.session_state['questions_used'], 10)
+            self.assertEqual(self.client.responses.stream.call_count, 10)
+            self.assertTrue(app.chat_input[0].disabled)
+            app.button[2].click().run()  # Clear conversation.
+            self.assertEqual(app.session_state['questions_used'], 10)
+            self.assertTrue(app.chat_input[0].disabled)
+            app.button[1].click().run()  # Prepare the library again.
+            self.assertEqual(app.session_state['questions_used'], 10)
+            self.assertTrue(app.chat_input[0].disabled)
+            self.assertEqual(self.client.responses.stream.call_count, 10)
+            fresh = AppTest.from_file('main.py').run()
+            self.assertEqual(fresh.session_state['questions_used'], 0)
+
+    def test_failed_request_uses_one_question_and_displays_error(self):
+        import streamlit as st
+        from streamlit.testing.v1 import AppTest
+        with patch.object(st, 'secrets', {'steam_api_key': 'fake-steam', 'OPENAI_API_KEY': 'fake-test-key'}):
+            self.client.responses.stream.side_effect = RuntimeError('Temporary test failure')
+            app = AppTest.from_file('main.py')
+            app.session_state['steam_df'] = sample_library()
+            app.session_state['questions_used'] = 9
+            app.run()
+            app.chat_input[0].set_value('Question ten').run()
+            self.assertFalse(app.exception)
+            self.assertEqual(app.session_state['questions_used'], 10)
+            self.assertTrue(app.chat_input[0].disabled)
+            self.assertIn('Temporary test failure', app.error[0].value)
+            self.assertEqual(self.client.responses.stream.call_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()

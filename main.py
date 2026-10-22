@@ -10,6 +10,8 @@ from library_insights import show_insights
 from models import LangModel
 from openai import AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
 
+SESSION_QUESTION_LIMIT = 10
+
 st.set_page_config(page_title='Steam Personal AI Assistant', layout='wide')
 with st.sidebar:
     # Resolve the image relative to this file for local and deployed runs.
@@ -34,6 +36,8 @@ for key, default in {
     'AI_helper': None,
     'messages': [],
     'steam_df': None,
+    'questions_used': 0,
+    'chat_error': None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -151,10 +155,20 @@ if st.session_state.steam_df is not None:
 st.subheader('Game chat')
 if st.button('Clear conversation'):
     st.session_state.messages = []
+    st.session_state.chat_error = None
     if st.session_state.AI_helper is not None:
         st.session_state.AI_helper.last_request = None
 if st.session_state.AI_helper is None:
     st.info('Load your profile, then click Prepare library before chatting.')
+
+# Session allowance counts submitted requests, including failed attempts.
+# Clearing history or loading another profile does not replenish it.
+questions_remaining = max(0, SESSION_QUESTION_LIMIT - st.session_state.questions_used)
+st.caption(f'{questions_remaining} of {SESSION_QUESTION_LIMIT} questions remaining this session.')
+if questions_remaining == 0:
+    st.info('You have reached the 10-question limit for this session. You can still explore your library and insights.')
+if st.session_state.chat_error:
+    st.error(st.session_state.chat_error)
 
 # Redraw saved messages because each interaction reruns the script.
 for message in st.session_state.messages:
@@ -163,9 +177,12 @@ for message in st.session_state.messages:
 
 input_query = st.chat_input(
     'Ask about your games, playtime, or recommendations:',
-    disabled=st.session_state.AI_helper is None,
+    disabled=st.session_state.AI_helper is None or questions_remaining == 0,
 )
-if input_query:
+if input_query and input_query.strip() and st.session_state.AI_helper is not None and questions_remaining > 0:
+    # Enforce the limit before any model call, independently of the disabled widget.
+    st.session_state.questions_used += 1
+    st.session_state.chat_error = None
     # Copy earlier messages before saving this question so it is not sent twice.
     history = list(st.session_state.messages)
     st.session_state.messages.append({'role': 'user', 'content': input_query})
@@ -181,15 +198,17 @@ if input_query:
                 response = st.write_stream(stream)
             st.session_state.messages.append({'role': 'assistant', 'content': response})
         except AuthenticationError:
-            st.error('OpenAI authentication failed. Check OPENAI_API_KEY in your secrets.')
+            st.session_state.chat_error = 'OpenAI authentication failed. Check OPENAI_API_KEY in your secrets.'
         except RateLimitError:
-            st.error('OpenAI rate or quota limit reached. Check API billing or retry later.')
+            st.session_state.chat_error = 'OpenAI rate or quota limit reached. Check API billing or retry later.'
         except APIConnectionError:
-            st.error('Could not connect to OpenAI. Check your connection and retry.')
+            st.session_state.chat_error = 'Could not connect to OpenAI. Check your connection and retry.'
         except APIStatusError:
-            st.error('OpenAI rejected the request. Check model access and API account settings.')
+            st.session_state.chat_error = 'OpenAI rejected the request. Check model access and API account settings.'
         except Exception as error:
-            st.error(f'Could not generate a response: {error}')
+            st.session_state.chat_error = f'Could not generate a response: {error}'
+    # Refresh the allowance and disabled input after either success or failure.
+    st.rerun()
 
 # Uncomment during development to inspect request metadata.
 # if st.session_state.AI_helper is not None and st.session_state.AI_helper.last_request is not None:
