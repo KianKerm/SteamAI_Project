@@ -1,4 +1,4 @@
-[Steam Personal AI Assistant]
+# [Steam Personal AI Assistant]
 Try the app here! https://steamai.streamlit.app/
 An OpenAI-powered assistant that helps you explore your Steam library, understand your gaming habits, and find something to play.
 Built with Python, Streamlit, pandas, and the Steam Web API.
