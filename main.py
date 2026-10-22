@@ -3,12 +3,23 @@
 # The project classes handle Steam requests, data preparation, and model calls.
 import streamlit as st
 import pandas as pd
+from pathlib import Path
 from steam_api import SteamAPI
 from data_loader import SteamDataLoader
+from library_insights import show_insights
 from models import LangModel
 from openai import AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
 
-st.title('Steam Personal AI Assistant')
+st.set_page_config(page_title='Steam Personal AI Assistant', layout='wide')
+with st.sidebar:
+    # Resolve the image relative to this file for local and deployed runs.
+    st.image(str(Path(__file__).parent / 'images' / 'steamlogo.jpg'), width='stretch')
+    st.subheader('Rediscover your library')
+    st.write('An OpenAI-powered assistant for insights into your Steam library. '
+             'Ask about your playtime, discover overlooked games, or find something '
+             'to play based on your mood.')
+    st.caption('Load your profile, prepare your library, then start chatting.')
+st.title('Steam Personal AI Assistant', text_alignment='center')
 
 # Read the API key from Streamlit secrets rather than embedding it in source code.
 steam_api_object = SteamAPI(st.secrets['steam_api_key'])
@@ -31,12 +42,12 @@ for key, default in {
 # A form submits the profile input together with its button. Steam requests run
 # only on submission, rather than each time the user sends a chat message.
 with st.form('steam_profile'):
-    profile_name = st.text_input('Enter Steam profile name')
+    profile_name = st.text_input('Enter SteamID or link your community profile.')
     load_profile = st.form_submit_button('Load profile')
 
 if load_profile:
     if not profile_name.strip():
-        st.warning('Enter a Steam profile name.')
+        st.warning('Enter SteamID or link your community profile.')
     else:
         with st.spinner('Loading Steam profile...'):
             vanity_response = steam_api_object.resolve_vanity_url(profile_name.strip())['response']
@@ -109,7 +120,8 @@ if st.button('Prepare library', disabled=not owned_games):
 # --- Display the user's library and connect it to OpenAI ---
 if st.session_state.steam_df is not None:
     steam_df = st.session_state.steam_df
-    with st.expander('Your Steam library', expanded=True):
+    library_tab, insights_tab = st.tabs(['Your library', 'Insights'])
+    with library_tab:
         # Present readable fields; keep internal IDs and model context in steam_df.
         library_columns = {
             'name': 'Game', 'short_description': 'Description', 'genres': 'Genres',
@@ -120,6 +132,8 @@ if st.session_state.steam_df is not None:
             steam_df.reindex(columns=library_columns).rename(columns=library_columns),
             hide_index=True,
         )
+    with insights_tab:
+        show_insights(steam_df)
     # Recreate helpers left in session state by an earlier version of the app.
     if not isinstance(st.session_state.AI_helper, LangModel):
         st.session_state.AI_helper = None
@@ -181,4 +195,8 @@ if input_query:
 # if st.session_state.AI_helper is not None and st.session_state.AI_helper.last_request is not None:
 #     with st.expander('OpenAI request details (debugging)'):
 #         st.json(st.session_state.AI_helper.last_request)
+
+with st.sidebar:
+    st.divider()
+    st.caption('Disclaimer: this application is not endorsed or a product of steam or valve corporation, it is just a fan-made project for fun.')
 

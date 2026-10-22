@@ -107,6 +107,13 @@ class OpenAIModelTests(unittest.TestCase):
             app.button[1].click().run()
             self.assertFalse(app.exception)
             self.assertEqual(len(app.session_state['steam_df']), 1)
+            self.assertEqual([tab.label for tab in app.tabs], ['Your library', 'Insights'])
+            self.assertEqual(len(app.metric), 4)
+            self.assertEqual(app.title[0].value, 'Steam Personal AI Assistant')
+            app.radio[0].set_value('Unplayed genres').run()
+            self.assertFalse(app.exception)
+            app.radio[0].set_value('Playtime breakdown').run()
+            self.assertFalse(app.exception)
             self.assertEqual(app.dataframe[0].value.columns.tolist(),
                              ['Game', 'Description', 'Genres', 'Release date',
                               'Developer', 'Publisher', 'Playtime (hours)'])
