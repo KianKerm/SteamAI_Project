@@ -5,7 +5,8 @@ import streamlit as st
 import pandas as pd
 from steam_api import SteamAPI
 from data_loader import SteamDataLoader
-from model import LangModel
+from models import LangModel
+from openai import AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
 
 st.title('Steam Personal AI Assistant')
 
@@ -14,7 +15,7 @@ steam_api_object = SteamAPI(st.secrets['steam_api_key'])
 
 # --- Preserve data between Streamlit reruns ---
 # Streamlit reruns this script when a widget is submitted. Session state keeps
-# the current user's library, model embeddings, and conversation across reruns.
+# the current user's library, OpenAI client, and conversation across reruns.
 # Only initialize missing keys so existing values are not overwritten.
 for key, default in {
     'owned_games': None,
@@ -101,22 +102,34 @@ if st.button('Prepare library', disabled=not owned_games):
     # Join from the owned-games side so missing store pages do not remove games
     # from counts, rankings, or totals. Personal data stays outside the store cache.
     st.session_state.steam_df = steam_data.combine_library(owned_games, store_df)
-    # Rebuild embeddings and clear old messages when the prepared data changes.
+    # Recreate the OpenAI helper and clear old messages when the data changes.
     st.session_state.AI_helper = None
     st.session_state.messages = []
 
-# --- Inspect prepared data and create the model's retrieval index ---
+# --- Inspect prepared data and connect the library to OpenAI ---
 if st.session_state.steam_df is not None:
     steam_df = st.session_state.steam_df
     with st.expander('Library DataFrame (debugging)', expanded=True):
         st.dataframe(steam_df)
-    # Keep structured records for exact operations and conversation selections.
-    # Semantic embeddings are built only when the first semantic question needs them.
-    if st.session_state.AI_helper is None:
-        st.session_state.AI_helper = LangModel(library_df=steam_df)
+    # Recreate helpers left in session state by an earlier version of the app.
+    if not isinstance(st.session_state.AI_helper, LangModel):
+        st.session_state.AI_helper = None
+        if 'OPENAI_API_KEY' not in st.secrets:
+            st.error('Add OPENAI_API_KEY to Streamlit secrets to enable chat.')
+        else:
+            try:
+                st.session_state.AI_helper = LangModel(
+                    library_df=steam_df, api_key=st.secrets['OPENAI_API_KEY'],
+                )
+            except ValueError as error:
+                st.error(str(error))
 
 # --- Display the conversation and handle a new question ---
 st.subheader('Game chat')
+if st.button('Clear conversation'):
+    st.session_state.messages = []
+    if st.session_state.AI_helper is not None:
+        st.session_state.AI_helper.last_request = None
 if st.session_state.AI_helper is None:
     st.info('Load your profile, then click Prepare library before chatting.')
 
@@ -138,19 +151,24 @@ if input_query:
     with st.chat_message('assistant'):
         try:
             with st.spinner('Chatbot is thinking...'):
-                # Plan the question, compute structured facts or search, then explain evidence.
+                # Send the prepared library and recent conversation to OpenAI.
                 stream = st.session_state.AI_helper.stream_chat(input_query, history=history)
-                # Extract text from Ollama chunks and display it as it arrives.
+                # The OpenAI helper yields plain text as it arrives.
                 # write_stream returns the complete response for chat history.
-                response = st.write_stream(
-                    chunk['message']['content'] for chunk in stream
-                )
+                response = st.write_stream(stream)
             st.session_state.messages.append({'role': 'assistant', 'content': response})
+        except AuthenticationError:
+            st.error('OpenAI authentication failed. Check OPENAI_API_KEY in your secrets.')
+        except RateLimitError:
+            st.error('OpenAI rate or quota limit reached. Check API billing or retry later.')
+        except APIConnectionError:
+            st.error('Could not connect to OpenAI. Check your connection and retry.')
+        except APIStatusError:
+            st.error('OpenAI rejected the request. Check model access and API account settings.')
         except Exception as error:
             st.error(f'Could not generate a response: {error}')
 
-if st.session_state.AI_helper is not None and st.session_state.AI_helper.last_result is not None:
-    with st.expander('Query plan and evidence (debugging)'):
-        st.json({'plan': st.session_state.AI_helper.last_plan,
-                 'evidence': st.session_state.AI_helper.last_result})
+if st.session_state.AI_helper is not None and st.session_state.AI_helper.last_request is not None:
+    with st.expander('OpenAI request details (debugging)'):
+        st.json(st.session_state.AI_helper.last_request)
 
