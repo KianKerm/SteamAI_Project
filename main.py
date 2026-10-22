@@ -4,6 +4,7 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+from requests import RequestException
 from steam_api import SteamAPI
 from data_loader import SteamDataLoader
 from library_insights import show_insights
@@ -38,6 +39,8 @@ for key, default in {
     'steam_df': None,
     'questions_used': 0,
     'chat_error': None,
+    'player_summary': None,
+    'profile_summary_error': None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -60,6 +63,18 @@ if load_profile:
                 owned_games = steam_api_object.get_owned_games(user_steam_id)['response']
                 st.session_state.user_steam_id = user_steam_id
                 st.session_state.owned_games = owned_games
+                # Cosmetic profile data is optional; a failed lookup must not block the library.
+                st.session_state.player_summary = None
+                st.session_state.profile_summary_error = None
+                try:
+                    summaries = steam_api_object.get_player_summary(user_steam_id)
+                    players = (summaries.get('response') or {}).get('players') or []
+                    st.session_state.player_summary = next(
+                        (player for player in players if str(player.get('steamid')) == str(user_steam_id)),
+                        None,
+                    )
+                except (RequestException, ValueError):
+                    st.session_state.profile_summary_error = 'Profile details could not be loaded. Your library is still available.'
                 # A newly loaded profile invalidates the previous prepared library
                 # and its OpenAI context and conversation.
                 st.session_state.steam_df = None
@@ -68,6 +83,18 @@ if load_profile:
                 st.success('Steam profile loaded.')
             else:
                 st.error('Failed to find your Steam profile!')
+
+# --- Display the loaded profile across reruns ---
+if st.session_state.user_steam_id is not None:
+    player = st.session_state.player_summary or {}
+    avatar = player.get('avatarfull') or player.get('avatarmedium') or player.get('avatar')
+    with st.container(border=True):
+        avatar_column, name_column = st.columns([1, 8], vertical_alignment='center')
+        if avatar:
+            avatar_column.image(avatar, width=80)
+        name_column.text(player.get('personaname') or f"Steam profile {st.session_state.user_steam_id}")
+    if st.session_state.profile_summary_error:
+        st.caption(st.session_state.profile_summary_error)
 
 # --- Fetch and cache public store information ---
 # Cache results for the requested app IDs to avoid repeating store requests.

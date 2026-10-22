@@ -27,7 +27,7 @@ class SteamDataLoader:
 
     def extract_fields_to_pandas(self, data_dict: dict):
         '''
-
+        Take fields from API response and send to dataframe, self.df
         :param data_dict:
         :return: None
         '''

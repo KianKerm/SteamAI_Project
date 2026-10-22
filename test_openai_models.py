@@ -98,12 +98,17 @@ class OpenAIModelTests(unittest.TestCase):
              patch.object(SteamAPI, 'resolve_vanity_url', return_value={'response': {'success': 1, 'steamid': '123'}}), \
              patch.object(SteamAPI, 'get_owned_games', return_value={'response': {'games': [
                  {'appid': 1, 'name': 'Example', 'playtime_forever': 90}]}}), \
+             patch.object(SteamAPI, 'get_player_summary', return_value={'response': {'players': [
+                 {'steamid': 'other', 'personaname': 'Wrong player'},
+                 {'steamid': '123', 'personaname': 'Mister Manager',
+                  'avatarfull': 'https://avatars.steamstatic.com/example_full.jpg'}]}}) as summary, \
              patch.object(SteamAPI, 'get_app_info', return_value={'1': {'success': False}}):
             self.client.responses.stream.return_value = fake_stream('Example: 1.5 hours')
             app = AppTest.from_file('main.py').run()
             self.assertFalse(app.exception)
             app.text_input[0].set_value('example')
             app.button[0].click().run()
+            self.assertEqual(app.session_state['player_summary']['personaname'], 'Mister Manager')
             app.button[1].click().run()
             self.assertFalse(app.exception)
             self.assertEqual(len(app.session_state['steam_df']), 1)
@@ -124,6 +129,27 @@ class OpenAIModelTests(unittest.TestCase):
             app.button[2].click().run()
             self.assertFalse(app.exception)
             self.assertEqual(app.session_state['messages'], [])
+            summary.assert_called_once_with('123')
+            self.assertIn('Mister Manager', [item.value for item in app.text])
+
+    def test_profile_summary_failure_does_not_block_library(self):
+        import streamlit as st
+        from streamlit.testing.v1 import AppTest
+        from steam_api import SteamAPI
+        from requests import Timeout
+        with patch.object(st, 'secrets', {'steam_api_key': 'fake-steam', 'OPENAI_API_KEY': 'fake-test-key'}), \
+             patch.object(SteamAPI, 'resolve_vanity_url', return_value={'response': {'success': 1, 'steamid': '123'}}), \
+             patch.object(SteamAPI, 'get_owned_games', return_value={'response': {'games': [
+                 {'appid': 1, 'name': 'Example', 'playtime_forever': 90}]}}), \
+             patch.object(SteamAPI, 'get_player_summary', side_effect=Timeout('test timeout')):
+            app = AppTest.from_file('main.py').run()
+            app.text_input[0].set_value('example')
+            app.button[0].click().run()
+            self.assertFalse(app.exception)
+            self.assertIsNone(app.session_state['player_summary'])
+            self.assertIsNotNone(app.session_state['owned_games'])
+            self.assertIsNotNone(app.session_state['profile_summary_error'])
+            self.assertIn('Steam profile 123', [item.value for item in app.text])
 
     def test_session_question_limit_survives_clear_and_library_reload(self):
         import streamlit as st

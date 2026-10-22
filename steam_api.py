@@ -1,4 +1,5 @@
 import requests
+from urllib.parse import urlparse
 
 
 # class obj that defines several methods to handle steam urls
@@ -14,11 +15,27 @@ class SteamAPI:
     def resolve_vanity_url(self, steam_profile_name: str) -> dict:
         '''
         Resolve the vanity url given the profile name to get the user's steamid.
-        :param steam_profile_name: a vanity name or https://steamcommunity.com/id/name/ URL
+        :param steam_profile_name: a vanity name, SteamID64, or Steam community profile URL
         :return: json containing the steamid of the user
         '''
-        profile_prefix = 'https://steamcommunity.com/id/'
-        steam_profile_name = steam_profile_name.strip().removeprefix(profile_prefix).rstrip('/')
+        steam_profile_name = steam_profile_name.strip()
+        path_prefix = None
+        if '://' in steam_profile_name:
+            profile = urlparse(steam_profile_name)
+            # Ignore query strings and take the final non-trailing path segment.
+            path_prefix, _, steam_profile_name = profile.path.rstrip('/').rpartition('/')
+            if (profile.scheme not in {'https', 'http'} or
+                    profile.hostname != 'steamcommunity.com' or
+                    path_prefix not in {'/id', '/profiles'} or not steam_profile_name):
+                return {'response': {'success': 42, 'message': 'Invalid Steam profile URL.'}}
+
+        is_steam_id = (steam_profile_name.isascii() and steam_profile_name.isdigit()
+                       and len(steam_profile_name) == 17)
+        if path_prefix == '/profiles' and not is_steam_id:
+            return {'response': {'success': 42, 'message': 'Invalid SteamID64.'}}
+        # Keep identifiers as strings. Even numeric /id/ names require vanity lookup.
+        if is_steam_id and path_prefix != '/id':
+            return {'response': {'success': 1, 'steamid': steam_profile_name}}
         api_url = f"{self.base_url}ISteamUser/ResolveVanityURL/v1/?key={self.auth_token}&vanityurl={steam_profile_name}"
         response = requests.get(api_url)
         return response.json()
@@ -49,7 +66,8 @@ class SteamAPI:
         player_summary_url = (f"{self.base_url}ISteamUser/GetPlayerSummaries/v0002/?key={self.auth_token}"
                               f"&steamids={steamid}"
                               f"&format=json")
-        response = requests.get(player_summary_url)
+        response = requests.get(player_summary_url, timeout=15)
+        response.raise_for_status()
         return response.json()
 
 
