@@ -52,3 +52,7 @@ Library data and recent chat messages are sent to OpenAI when you ask a question
 Charts in the Insights tab are calculated by the application.
 [Disclaimer]
 This application is not endorsed by, affiliated with, or a product of Steam or Valve Corporation. It is a fan-made project created for fun.
+
+### :D
+If you like the app, consider tipping here so I can keep paying for the tokens used by the OpenAI model :) 
+https://ko-fi.com/kiank
