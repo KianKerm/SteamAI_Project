@@ -107,9 +107,13 @@ class OpenAIModelTests(unittest.TestCase):
             app.button[1].click().run()
             self.assertFalse(app.exception)
             self.assertEqual(len(app.session_state['steam_df']), 1)
+            self.assertEqual(app.dataframe[0].value.columns.tolist(),
+                             ['Game', 'Description', 'Genres', 'Release date',
+                              'Developer', 'Publisher', 'Playtime (hours)'])
             app.chat_input[0].set_value('What is my playtime?').run()
             self.assertFalse(app.exception)
             self.assertEqual(app.session_state['messages'][-1]['content'], 'Example: 1.5 hours')
+            self.assertEqual(len(app.get('json')), 0)
             app.button[2].click().run()
             self.assertFalse(app.exception)
             self.assertEqual(app.session_state['messages'], [])

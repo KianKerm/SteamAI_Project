@@ -46,7 +46,7 @@ if load_profile:
                 st.session_state.user_steam_id = user_steam_id
                 st.session_state.owned_games = owned_games
                 # A newly loaded profile invalidates the previous prepared library
-                # and its embeddings and conversation.
+                # and its OpenAI context and conversation.
                 st.session_state.steam_df = None
                 st.session_state.AI_helper = None
                 st.session_state.messages = []
@@ -106,11 +106,20 @@ if st.button('Prepare library', disabled=not owned_games):
     st.session_state.AI_helper = None
     st.session_state.messages = []
 
-# --- Inspect prepared data and connect the library to OpenAI ---
+# --- Display the user's library and connect it to OpenAI ---
 if st.session_state.steam_df is not None:
     steam_df = st.session_state.steam_df
-    with st.expander('Library DataFrame (debugging)', expanded=True):
-        st.dataframe(steam_df)
+    with st.expander('Your Steam library', expanded=True):
+        # Present readable fields; keep internal IDs and model context in steam_df.
+        library_columns = {
+            'name': 'Game', 'short_description': 'Description', 'genres': 'Genres',
+            'release_date': 'Release date', 'developers': 'Developer',
+            'publishers': 'Publisher', 'playtime_hours': 'Playtime (hours)',
+        }
+        st.dataframe(
+            steam_df.reindex(columns=library_columns).rename(columns=library_columns),
+            hide_index=True,
+        )
     # Recreate helpers left in session state by an earlier version of the app.
     if not isinstance(st.session_state.AI_helper, LangModel):
         st.session_state.AI_helper = None
@@ -168,7 +177,8 @@ if input_query:
         except Exception as error:
             st.error(f'Could not generate a response: {error}')
 
-if st.session_state.AI_helper is not None and st.session_state.AI_helper.last_request is not None:
-    with st.expander('OpenAI request details (debugging)'):
-        st.json(st.session_state.AI_helper.last_request)
+# Uncomment during development to inspect request metadata.
+# if st.session_state.AI_helper is not None and st.session_state.AI_helper.last_request is not None:
+#     with st.expander('OpenAI request details (debugging)'):
+#         st.json(st.session_state.AI_helper.last_request)
 
