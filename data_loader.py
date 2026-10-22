@@ -47,6 +47,28 @@ class SteamDataLoader:
             self.df = pd.concat([self.df ,pd.DataFrame(allowed_fields, index=[self.df.index[-1] + 1]) ] )
         return None
 
+    def combine_library(self, owned_games, store_df):
+        """Preserve all owned games, enriching them with available store metadata."""
+        owned = pd.DataFrame(owned_games).reindex(columns=['appid', 'name', 'playtime_forever'])
+        owned = owned.rename(columns={'appid': 'steam_appid', 'name': 'owned_name'})
+        owned['steam_appid'] = pd.to_numeric(owned['steam_appid'], errors='raise').astype('Int64')
+        store = store_df.copy()
+        store['steam_appid'] = pd.to_numeric(store['steam_appid'], errors='raise').astype('Int64')
+        self.df = owned.merge(store, on='steam_appid', how='left', validate='one_to_one', indicator=True)
+        self.df['store_data_available'] = self.df.pop('_merge').eq('both')
+        if 'name' not in self.df:
+            self.df['name'] = pd.NA
+        self.df['name'] = self.df['name'].replace('', pd.NA).fillna(self.df.pop('owned_name'))
+        self.df['name'] = self.df['name'].fillna('App ' + self.df['steam_appid'].astype(str))
+        self.df['playtime_hours'] = pd.to_numeric(self.df['playtime_forever'], errors='coerce') / 60
+        for field in ['detailed_description', 'short_description', 'genres', 'release_date',
+                      'developers', 'publishers']:
+            if field not in self.df:
+                self.df[field] = pd.NA
+        self.clean_text()
+        self.add_context()
+        return self.df
+
     def clean_text(self):
         """Remove HTML from descriptions in place, preserving missing values."""
         if self.df is None:
@@ -60,7 +82,9 @@ class SteamDataLoader:
             parser.close()
             return ''.join(parser.parts).strip()
 
-        self.df['detailed_description'] = self.df['detailed_description'].map(remove_html)
+        for field in ['detailed_description', 'short_description']:
+            if field in self.df:
+                self.df[field] = self.df[field].map(remove_html)
         return None
 
     def add_context(self):

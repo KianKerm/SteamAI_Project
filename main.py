@@ -1,13 +1,21 @@
+# --- Imports and application setup ---
+# Streamlit for the interface; pandas for data management.
+# The project classes handle Steam requests, data preparation, and model calls.
 import streamlit as st
 import pandas as pd
 from steam_api import SteamAPI
 from data_loader import SteamDataLoader
 from model import LangModel
 
-st.title('Steam App')
+st.title('Steam Personal AI Assistant')
 
+# Read the API key from Streamlit secrets rather than embedding it in source code.
 steam_api_object = SteamAPI(st.secrets['steam_api_key'])
 
+# --- Preserve data between Streamlit reruns ---
+# Streamlit reruns this script when a widget is submitted. Session state keeps
+# the current user's library, model embeddings, and conversation across reruns.
+# Only initialize missing keys so existing values are not overwritten.
 for key, default in {
     'owned_games': None,
     'user_steam_id': None,
@@ -18,6 +26,9 @@ for key, default in {
     if key not in st.session_state:
         st.session_state[key] = default
 
+# --- Load a Steam profile and its owned games ---
+# A form submits the profile input together with its button. Steam requests run
+# only on submission, rather than each time the user sends a chat message.
 with st.form('steam_profile'):
     profile_name = st.text_input('Enter Steam profile name')
     load_profile = st.form_submit_button('Load profile')
@@ -33,6 +44,8 @@ if load_profile:
                 owned_games = steam_api_object.get_owned_games(user_steam_id)['response']
                 st.session_state.user_steam_id = user_steam_id
                 st.session_state.owned_games = owned_games
+                # A newly loaded profile invalidates the previous prepared library
+                # and its embeddings and conversation.
                 st.session_state.steam_df = None
                 st.session_state.AI_helper = None
                 st.session_state.messages = []
@@ -40,6 +53,10 @@ if load_profile:
             else:
                 st.error('Failed to find your Steam profile!')
 
+# --- Fetch and cache public store information ---
+# Cache results for the requested app IDs to avoid repeating store requests.
+# The underscore in _steam_data excludes that argument from Streamlit's cache key.
+# On a cache hit, the function body is skipped; callers use the returned DataFrame.
 @st.cache_data(show_spinner="Fetching data from Steam API...")
 def fetch_app_info(app_ids: list, _steam_data):
     '''
@@ -51,6 +68,8 @@ def fetch_app_info(app_ids: list, _steam_data):
     skipped_app_ids = []
     for app_id in app_ids:
         app_info = steam_api_object.get_app_info(app_id)
+        # Store responses use string app IDs as keys. Skip unavailable entries
+        # so one missing store record does not stop the rest of the library.
         result = (app_info or {}).get(str(app_id)) or {}
         if not result.get('success') or not isinstance(result.get('data'), dict):
             skipped_app_ids.append(app_id)
@@ -58,8 +77,9 @@ def fetch_app_info(app_ids: list, _steam_data):
         _steam_data.extract_fields_to_pandas(result['data'])
 
     if skipped_app_ids:
-        st.warning(f'Steam returned no store data for {len(skipped_app_ids)} apps; these were skipped.')
+        st.warning(f'Store details unavailable for {len(skipped_app_ids)} apps. Their owned-game records will be retained.')
 
+    # Preserve the columns needed downstream even if every store lookup failed.
     if _steam_data.df is None:
         return pd.DataFrame(columns=['steam_appid', 'name', 'short_description'])
 
@@ -67,7 +87,8 @@ def fetch_app_info(app_ids: list, _steam_data):
 
     return _steam_data.df
 
-# owned games
+# --- Combine store information with this user's playtime ---
+# Each item in games is a dictionary; extract its appid for store lookups.
 owned_games = (st.session_state.owned_games or {}).get('games', [])
 
 if st.session_state.owned_games is not None:
@@ -75,58 +96,41 @@ if st.session_state.owned_games is not None:
 if st.button('Prepare library', disabled=not owned_games):
     app_ids = [game['appid'] for game in owned_games]
     steam_data = SteamDataLoader()
+    # Work on a copy of the returned store data before adding personal fields.
     store_df = fetch_app_info(app_ids, steam_data).copy()
-    # Keep user-specific playtime outside the cached store-data request.
-    playtime_df = pd.DataFrame(owned_games).reindex(columns=['appid', 'playtime_forever'])
-    playtime_df = playtime_df.rename(columns={'appid': 'steam_appid'})
-    store_df['steam_appid'] = pd.to_numeric(store_df['steam_appid'], errors='raise').astype('Int64')
-    playtime_df['steam_appid'] = pd.to_numeric(playtime_df['steam_appid'], errors='raise').astype('Int64')
-    # Steam reports minutes. Retain fractional hours and distinguish missing from zero.
-    playtime_df['playtime_hours'] = pd.to_numeric(
-        playtime_df['playtime_forever'], errors='coerce'
-    ) / 60
-    steam_data.df = store_df.merge(
-        playtime_df[['steam_appid', 'playtime_hours']],
-        on='steam_appid', how='left', validate='one_to_one',
-    )
-    steam_data.add_context()
-    st.session_state.steam_df = steam_data.df
+    # Join from the owned-games side so missing store pages do not remove games
+    # from counts, rankings, or totals. Personal data stays outside the store cache.
+    st.session_state.steam_df = steam_data.combine_library(owned_games, store_df)
+    # Rebuild embeddings and clear old messages when the prepared data changes.
     st.session_state.AI_helper = None
     st.session_state.messages = []
 
+# --- Inspect prepared data and create the model's retrieval index ---
 if st.session_state.steam_df is not None:
     steam_df = st.session_state.steam_df
     with st.expander('Library DataFrame (debugging)', expanded=True):
         st.dataframe(steam_df)
+    # Keep structured records for exact operations and conversation selections.
+    # Semantic embeddings are built only when the first semantic question needs them.
     if st.session_state.AI_helper is None:
-        descriptions = steam_df['FullContext']
-        valid = descriptions.map(lambda value: isinstance(value, str) and bool(value.strip()))
-        if valid.any():
-            try:
-                with st.spinner('Preparing game descriptions for the chatbot...'):
-                    AI_helper = LangModel(
-                        dataset=descriptions.loc[valid].tolist(),
-                    )
-                    AI_helper.add_chunk_to_database()
-                    st.session_state.AI_helper = AI_helper
-            except Exception as error:
-                st.error(f'Could not prepare the chatbot: {error}')
-        else:
-            st.warning('No game descriptions are available to search.')
+        st.session_state.AI_helper = LangModel(library_df=steam_df)
 
+# --- Display the conversation and handle a new question ---
 st.subheader('Game chat')
 if st.session_state.AI_helper is None:
     st.info('Load your profile, then click Prepare library before chatting.')
 
+# Redraw saved messages because each interaction reruns the script.
 for message in st.session_state.messages:
     with st.chat_message(message['role']):
         st.markdown(message['content'])
 
 input_query = st.chat_input(
-    'Ask me about similar games:',
+    'Ask about your games, playtime, or recommendations:',
     disabled=st.session_state.AI_helper is None,
 )
 if input_query:
+    # Copy earlier messages before saving this question so it is not sent twice.
     history = list(st.session_state.messages)
     st.session_state.messages.append({'role': 'user', 'content': input_query})
     with st.chat_message('user'):
@@ -134,11 +138,19 @@ if input_query:
     with st.chat_message('assistant'):
         try:
             with st.spinner('Chatbot is thinking...'):
+                # Plan the question, compute structured facts or search, then explain evidence.
                 stream = st.session_state.AI_helper.stream_chat(input_query, history=history)
+                # Extract text from Ollama chunks and display it as it arrives.
+                # write_stream returns the complete response for chat history.
                 response = st.write_stream(
                     chunk['message']['content'] for chunk in stream
                 )
             st.session_state.messages.append({'role': 'assistant', 'content': response})
         except Exception as error:
             st.error(f'Could not generate a response: {error}')
+
+if st.session_state.AI_helper is not None and st.session_state.AI_helper.last_result is not None:
+    with st.expander('Query plan and evidence (debugging)'):
+        st.json({'plan': st.session_state.AI_helper.last_plan,
+                 'evidence': st.session_state.AI_helper.last_result})
 
