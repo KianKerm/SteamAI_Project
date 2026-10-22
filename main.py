@@ -41,6 +41,7 @@ for key, default in {
     'chat_error': None,
     'player_summary': None,
     'profile_summary_error': None,
+    'profile_background': None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -75,6 +76,12 @@ if load_profile:
                     )
                 except (RequestException, ValueError):
                     st.session_state.profile_summary_error = 'Profile details could not be loaded. Your library is still available.'
+                # Backgrounds are optional and are fetched only when loading a profile.
+                st.session_state.profile_background = None
+                try:
+                    st.session_state.profile_background = steam_api_object.get_profile_background(user_steam_id)
+                except (RequestException, ValueError):
+                    pass  # Keep the normal app background if Steam cannot provide one.
                 # A newly loaded profile invalidates the previous prepared library
                 # and its OpenAI context and conversation.
                 st.session_state.steam_df = None
@@ -83,6 +90,22 @@ if load_profile:
                 st.success('Steam profile loaded.')
             else:
                 st.error('Failed to find your Steam profile!')
+
+# --- Apply the session's profile background ---
+background = st.session_state.profile_background
+if background:
+    # Match the overlay to the active theme so text and widgets stay readable.
+    overlay = 'rgba(14, 17, 23, 0.84)' if st.context.theme.type == 'dark' else 'rgba(255, 255, 255, 0.84)'
+    st.html(f'''<style>
+        .stApp {{
+            background-image: linear-gradient({overlay}, {overlay}), url("{background}");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }}
+    </style>''')
+else:
+    st.html('<style>.stApp { background-image: none; }</style>')
 
 # --- Display the loaded profile across reruns ---
 if st.session_state.user_steam_id is not None:

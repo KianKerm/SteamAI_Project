@@ -1,4 +1,5 @@
 import requests
+import re
 from urllib.parse import urlparse
 
 
@@ -70,6 +71,21 @@ class SteamAPI:
         response.raise_for_status()
         return response.json()
 
+
+    def get_profile_background(self, steamid):
+        """Return the equipped JPG preview, or None when no usable image exists."""
+        # This public endpoint currently works without an API key.
+        response = requests.get(
+            f'{self.base_url}IPlayerService/GetProfileBackground/v1/',
+            params={'steamid': str(steamid)}, timeout=10,
+        )
+        response.raise_for_status()
+        background = (response.json().get('response') or {}).get('profile_background') or {}
+        image = background.get('image_large')
+        # Only permit Steam item-image paths, never arbitrary URLs or CSS contents.
+        if isinstance(image, str) and re.fullmatch(r'items/\d+/[\w-]+\.(?:jpg|jpeg|png)', image, re.ASCII):
+            return 'https://shared.fastly.steamstatic.com/community_assets/images/' + image
+        return None
 
     def get_app_list(self,last_appid = '', max_results = 10000) -> dict:
         '''
