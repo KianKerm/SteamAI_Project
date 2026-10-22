@@ -26,11 +26,12 @@ class SteamDataLoader:
 
 
     def extract_fields_to_pandas(self, data_dict: dict):
-        # detailed_description (req regex)
-        # genres (exclude free to play) [genres].keys()
-        # dataframe should look like
-        # Name | short_description | genre 1 | 2
-        # dict is from here steam_app_info['3513350']['data']
+        '''
+
+        :param data_dict:
+        :return: None
+        '''
+
 
         allowed_fields = {'name':data_dict.get('name'),
                           'detailed_description':data_dict.get('detailed_description'),
@@ -48,7 +49,12 @@ class SteamDataLoader:
         return None
 
     def combine_library(self, owned_games, store_df):
-        """Preserve all owned games, enriching them with available store metadata."""
+        '''
+        Preserve owned games and enrich with data form steam store.
+        :param owned_games:
+        :param store_df:
+        :return: self.df
+        '''
         owned = pd.DataFrame(owned_games).reindex(columns=['appid', 'name', 'playtime_forever'])
         owned = owned.rename(columns={'appid': 'steam_appid', 'name': 'owned_name'})
         owned['steam_appid'] = pd.to_numeric(owned['steam_appid'], errors='raise').astype('Int64')
@@ -70,7 +76,10 @@ class SteamDataLoader:
         return self.df
 
     def clean_text(self):
-        """Remove HTML from descriptions in place, preserving missing values."""
+        '''
+        Remove html from text
+        :return:
+        '''
         if self.df is None:
             return None
 
@@ -88,7 +97,10 @@ class SteamDataLoader:
         return None
 
     def add_context(self):
-        """Create a labeled FullContext string for each game in place."""
+        '''
+        Create semantic variable to store multiple pieces of information
+        :return: None
+        '''
         if self.df is None:
             return None
 
@@ -122,15 +134,3 @@ class SteamDataLoader:
                 self.df['playtime_hours'].map(format_playtime).astype(str) + '.'
             )
         return None
-
-
-# step 1: iterate through all owned games ad get appid, playtime forever in hours
-# step 2: merge with appid, the short_description and genres from another api call
-# tag each row with unique id
-# loop over all owned games (use st.cache_data)
-# preprocess the short_description (all UPPER no punctuation)
-# agg all genres into a list so that df is N x 5
-# should use relative library playtime to weight reccommendations (not sure how yet)
-# model shhould one hot encode all genres
-
-# stochastically pick games from steam marketplace and ocmpute similarity rathe than procesingg 10000+ api calls in one inute
