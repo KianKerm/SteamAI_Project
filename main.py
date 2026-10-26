@@ -24,7 +24,7 @@ with st.sidebar:
     st.caption('Load your profile, prepare your library, then start chatting.')
 st.title('Steam Personal AI Assistant', text_alignment='center')
 
-# Read the API key from Streamlit secrets rather than embedding it in source code.
+# Read API key
 steam_api_object = SteamAPI(st.secrets['steam_api_key'])
 
 # --- Preserve data between Streamlit reruns ---
